@@ -54,8 +54,8 @@ void *Produce(void *arg) {
 		end = (thread_ID + 1) * multiplier;
 	}
 
-	printf("start = %i\n", start);
-	printf("end = %i\n", end);
+	printf("Thread #%i start = %i\n", thread_ID, start);
+	printf("Thread #%i end = %i\n", thread_ID,end);
 
 	for (int i = start; i < end; ++i) {
 		sem_wait(&producer_semaphore);
@@ -71,7 +71,7 @@ void *Produce(void *arg) {
 		item->sleep_time = rand() % 701 + 200;
 		pthread_mutex_lock(&cant_touch_this);
 		buffer.push_back(item);
-		printf("Pushed back item %i\n", item->ID);
+		printf("Producer Thread #%i : Item #%i : Sleep Time: %i\n", thread_ID, item->ID, item->sleep_time);
 		pthread_mutex_unlock(&cant_touch_this);
 		sem_post(&consumer_semaphore);
 		get_producer_sem_value();
@@ -81,9 +81,22 @@ void *Produce(void *arg) {
 	return NULL;
 } 
 
-void *Consumer(void *i) {
-	printf("INSIDE CONSUMER\n");
-	// consumer semaphore will wait while buffer > 0 (decrement/consume items in buffer)
+void *Consume(void *arg) {
+	while(1) {
+		sem_wait(&consumer_semaphore);
+		int thread_ID = (intptr_t) arg;
+		Item *item;
+		item = buffer.front();
+		usleep(item->sleep_time);
+		printf("Consumer Thread #%i : Item #:%i : Sleep Time: %i\n", thread_ID, item->ID, item->sleep_time);
+		pthread_mutex_lock(&cant_touch_this);
+		buffer.erase(buffer.begin());
+		pthread_mutex_unlock(&cant_touch_this);
+		sem_post(&producer_semaphore);
+		// consumer semaphore will wait while buffer > 0 (decrement/consume items in buffer)
+		get_producer_sem_value();
+		get_consumer_sem_value();
+	}
 	return NULL;
 
 }
@@ -149,11 +162,21 @@ int main(int argc, char **argv) {
 		exit(1);
 	}
 
+	for (int i = 0; i < num_consumers; ++i) {
+		pthread_create(&consumer_threads[i], NULL, Consume, (void *) i);
+	}
+
 	for (int i = 0; i < num_producers; ++i) {
 		pthread_create(&producer_threads[i], NULL, Produce, (void *) i);
 	}
 
 	for (int i = 0; i < num_producers; ++i) {
 		pthread_join(producer_threads[i], NULL);
+	}	
+
+	fprintf(stderr, "DONE PRODUCING!\n");
+
+	for (int i = 0; i < num_consumers; ++i) {
+		pthread_join(consumer_threads[i], NULL);
 	}
 }
